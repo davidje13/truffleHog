@@ -72,22 +72,14 @@ def main():
             with open(args.allow, "r") as allowFile:
                 allow = json.loads(allowFile.read())
                 for rule in allow:
-                    allow[rule] = read_pattern(allow[rule])
+                    allow[rule] = read_allow_pattern(allow[rule])
         except (IOError, ValueError) as e:
             raise("Error reading allow file")
     do_entropy = str2bool(args.do_entropy)
 
     # read & compile path inclusion/exclusion patterns
-    path_inclusions = []
-    path_exclusions = []
-    if args.include_paths:
-        for pattern in set(l[:-1].lstrip() for l in args.include_paths):
-            if pattern and not pattern.startswith('#'):
-                path_inclusions.append(re.compile(pattern))
-    if args.exclude_paths:
-        for pattern in set(l[:-1].lstrip() for l in args.exclude_paths):
-            if pattern and not pattern.startswith('#'):
-                path_exclusions.append(re.compile(pattern))
+    path_inclusions = read_path_patterns(args.include_paths)
+    path_exclusions = read_path_patterns(args.exclude_paths)
 
     output = find_strings(args.git_url, args.since_commit, args.max_depth, args.output_json, args.do_regex, do_entropy,
             surpress_output=False, branch=args.branch, repo_path=args.repo_path, path_inclusions=path_inclusions, path_exclusions=path_exclusions, allow=allow)
@@ -99,12 +91,32 @@ def main():
     else:
         sys.exit(0)
 
+def read_path_patterns(data):
+    result = []
+    if data:
+        for pattern in set(l.strip() for l in data):
+            if pattern and not pattern.startswith('#'):
+                result.append(re.compile(pattern))
+    return result
+
 def read_pattern(r):
     if r.startswith("regex:"):
         return re.compile(r[6:])
     converted = re.escape(r)
     converted = re.sub(r"(\r?\n|(\\+r)?\\+n)+", r"([ \t]*(\r?\n|(\\\\+r)?\\\\+n)[ \t]*)*", converted)
     return re.compile(converted)
+
+def read_allow_pattern(r):
+    if isinstance(r, str):
+        return AllowEntry(r)
+
+    return AllowEntry(r["pattern"], r.get("include_paths"), r.get("exclude_paths"))
+
+class AllowEntry:
+    def __init__(self, pattern, path_inclusions = None, path_exclusions = None):
+        self.pattern = read_pattern(pattern)
+        self.path_inclusions = read_path_patterns(path_inclusions)
+        self.path_exclusions = read_path_patterns(path_exclusions)
 
 def str2bool(v):
     if v == None:
@@ -270,7 +282,8 @@ def diff_worker(diff, curr_commit, prev_commit, branch_name, commitHash, custom_
         if not path_included(blob, path_inclusions, path_exclusions):
             continue
         for key in allow:
-            printableDiff = allow[key].sub('', printableDiff)
+            if path_included(blob, allow[key].path_inclusions, allow[key].path_exclusions):
+                printableDiff = allow[key].pattern.sub('[ignoring known pattern]', printableDiff)
         commit_time =  datetime.datetime.fromtimestamp(prev_commit.committed_date).strftime('%Y-%m-%d %H:%M:%S')
         foundIssues = []
         if do_entropy:

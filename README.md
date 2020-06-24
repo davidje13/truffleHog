@@ -76,10 +76,13 @@ To explicitly allow particular secrets (e.g. self-signed keys used only for loca
 {
     "local self signed test key": "-----BEGIN EC PRIVATE KEY-----\nfoobar123\n-----END EC PRIVATE KEY-----",
     "git cherry pick SHAs": "regex:Cherry picked from .*",
+    "keys ": { "pattern": "regex:\"key\": *\"[^"]*\"", "include_paths": ["test-data.json"] }
 }
 ```
 
 Note that values beginning with `regex:` will be used as regular expressions. Values without this will be literal, with some automatic conversions (e.g. flexible newlines).
+
+To restrict patterns to particular files, you can use the object syntax and specify the optional `include_paths` and/or `exclude_paths`.
 
 ## How it works
 This module will go through the entire commit history of each branch, and check each diff from each commit, and check for secrets. This is both by regex and by entropy. For entropy checks, truffleHog will evaluate the shannon entropy for both the base64 char set and hexidecimal char set for every blob of text greater than 20 characters comprised of those character sets in each diff. If at any point a high entropy string >20 characters is detected, it will print to the screen.
